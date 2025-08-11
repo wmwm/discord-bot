@@ -1,0 +1,19 @@
+[providers]
+ruby = "3.2.2"
+
+[phases.setup]
+nixPkgs = ["ruby_3_2", "sqlite", "libffi"]
+
+[phases.install]
+cmds = [
+  "bundle config set force_ruby_platform true",
+  "bundle config set --local without 'development test'", 
+  "bundle install --jobs 4 --retry 3"
+]
+
+[start]
+cmd = "bundle exec ruby pugbot.rb"
+
+[variables]
+BUNDLE_WITHOUT = "development:test"
+RACK_ENV = "production"
