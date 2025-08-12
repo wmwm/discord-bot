@@ -1,6 +1,6 @@
 source 'https://rubygems.org'
 
-ruby '3.4.1'
+ruby '3.2.2'
 
 # Discord bot framework (let it handle FFI dependency)
 gem 'discordrb', '~> 3.5'
