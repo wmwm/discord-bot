@@ -3,8 +3,8 @@ FROM ruby:3.2.2
 # Install dependencies required for building native gems
 RUN apt-get update -qq && apt-get install -y --no-install-recommends build-essential
 
-WORKDIR /app
-COPY . .
+WORKDIR /app/bot
+COPY bot/ .
 
 # Precompile gems to speed up installation and reduce image size
 RUN gem install bundler -v "$(grep -A 1 "BUNDLED WITH" Gemfile.lock | tail -n 1)"

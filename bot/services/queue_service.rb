@@ -101,6 +101,31 @@ class QueueService
       ready_status: ready_status
     }
   end
+
+  def player_unready(discord_user)
+    return { success: false, message: 'No ready check active!' } unless @ready_check_active
+    
+    player = Player.find(discord_id: discord_user.id.to_s)
+    return { success: false, message: 'You are not in the queue!' } unless player
+    
+    unless @ready_players.any? { |r| r[:player].id == player.id }
+      return { success: false, message: 'You are not marked as ready!' }
+    end
+    
+    @ready_players.reject! { |r| r[:player].id == player.id }
+    
+    # Update database status
+    QueuePlayer.where(player_id: player.id).update(
+      status: 'queued',
+      ready_at: nil
+    )
+    
+    { 
+      success: true, 
+      message: "You are no longer ready.",
+      ready_status: ready_status
+    }
+  end
   
   def queue_status
     {

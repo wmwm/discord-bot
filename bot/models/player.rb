@@ -61,4 +61,27 @@ class Player < Sequel::Model
       last_seen: last_seen&.strftime('%Y-%m-%d %H:%M UTC')
     }
   end
+
+  def set_country_code(code)
+    # Basic validation for 2-letter country code
+    if code.to_s.length == 2 && code.to_s.match?(/^[A-Z]{2}$/i)
+      self.country_code = code.upcase
+      # For now, region is derived from country code. Can be expanded later.
+      self.region = code.upcase # Simple mapping for now
+      save_changes
+      { success: true, message: "Your country code has been set to #{self.country_code}." }
+    else
+      { success: false, message: "Invalid country code. Please use a 2-letter ISO country code (e.g., AU, US)." }
+    end
+  end
+
+  def ban!
+    self.banned = true
+    save_changes
+  end
+
+  def unban!
+    self.banned = false
+    save_changes
+  end
 end

@@ -27,6 +27,7 @@ DB.create_table? :players do
   Integer :losses, default: 0
   Float :avg_frags_per_match, default: 0.0
   DateTime :last_seen
+  Boolean :banned, default: false
   DateTime :created_at, default: Sequel::CURRENT_TIMESTAMP
   DateTime :updated_at, default: Sequel::CURRENT_TIMESTAMP
 end

@@ -11,6 +11,7 @@ gem 'sequel', '~> 5.76'
 
 # AWS SDK
 gem 'aws-sdk-ec2', '~> 1.0'
+gem 'aws-sdk-s3', '~> 1.0'
 
 # AI/LLM integration
 gem 'ruby-openai', '~> 6.3'

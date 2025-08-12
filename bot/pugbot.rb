@@ -32,6 +32,8 @@ class PugBot
     @aws_service = AwsService.new
     @ai_service = AiService.new
 
+    @map_votes = Hash.new(0) # Initialize map votes
+
     setup_commands
     setup_events
   end
@@ -91,6 +93,11 @@ class PugBot
       else
         event << "Error: #{result[:message]}"
       end
+    end
+
+    @bot.command(:unready) do |event|
+      result = @queue_service.player_unready(event.user)
+      event << result[:success] ? "Success: #{result[:message]}" : "Error: #{result[:message]}"
     end
 
     @bot.command(:status) do |event|
@@ -159,6 +166,40 @@ class PugBot
       end
     end
 
+    @bot.command(:serverstatus) do |event|
+      servers = @aws_service.list_active_servers
+
+      if servers.empty?
+        event << "📋 **No active servers.**"
+      else
+        server_list = servers.map do |server|
+          "🖥️ **#{server[:region]} Server**\n" +
+          "Instance ID: #{server[:aws_instance_id]}\n" +
+          "Public IP: #{server[:public_ip]}\n" +
+          "Status: #{server[:status]}\n" +
+          "Uptime: #{server[:uptime]}\n" +
+          "Players: #{server[:player_count]}"
+        end.join("\n\n")
+
+        event << "🌐 **FortressOne Server Status:**\n#{server_list}"
+      end
+    end
+
+    @bot.command(:stopserver) do |event, server_id|
+      unless server_id
+        event << "Error: Please provide the server ID to stop. You can get this from !serverstatus."
+        return
+      end
+
+      result = @aws_service.terminate_server(server_id.to_i)
+
+      if result[:success]
+        event << "Success: #{result[:message]}"
+      else
+        event << "Error: Failed to stop server: #{result[:error]}"
+      end
+    end
+
     # Player statistics
     @bot.command(:profile) do |event, mentioned_user = nil|
       target_user = mentioned_user ? event.message.mentions.first : event.user
@@ -185,6 +226,17 @@ class PugBot
       embed.add_field(name: "👀 Last Seen", value: profile[:last_seen] || 'Never', inline: true)
 
       event.channel.send_embed('', embed)
+    end
+
+    @bot.command(:setlocation) do |event, country_code|
+      unless country_code
+        event << "Error: Please provide a 2-letter country code (e.g., AU, US)."
+        return
+      end
+
+      player = Player.find_or_create_by_discord(event.user)
+      result = player.set_country_code(country_code)
+      event << result[:message]
     end
 
     # AI-powered commands
@@ -217,6 +269,47 @@ class PugBot
 
       event << "⚡ **Admin force starting match...**"
       start_match(event, force: true)
+    end
+
+    @bot.command(:cleanup, required_roles: ['Admin', 'Moderator']) do |event|
+      result = @aws_service.terminate_all_servers
+      event << "Success: Terminated #{result[:terminated_count]} servers."
+    end
+
+    @bot.command(:ban, required_roles: ['Admin', 'Moderator']) do |event, mentioned_user|
+      unless mentioned_user
+        event << "Error: Please mention a user to ban."
+        return
+      end
+
+      target_user = event.message.mentions.first
+      player = Player.find(discord_id: target_user.id.to_s)
+
+      unless player
+        event << "Error: Player not found."
+        return
+      end
+
+      player.ban!
+      event << "Success: #{player.username} has been banned."
+    end
+
+    @bot.command(:unban, required_roles: ['Admin', 'Moderator']) do |event, mentioned_user|
+      unless mentioned_user
+        event << "Error: Please mention a user to unban."
+        return
+      end
+
+      target_user = event.message.mentions.first
+      player = Player.find(discord_id: target_user.id.to_s)
+
+      unless player
+        event << "Error: Player not found."
+        return
+      end
+
+      player.unban!
+      event << "Success: #{player.username} has been unbanned."
     end
   end
 
