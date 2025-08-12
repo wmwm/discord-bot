@@ -170,7 +170,7 @@ class PugBot
       end
 
       profile = player.profile_summary
-      
+
       embed = Discordrb::Webhooks::Embed.new(
         title: "👤 Player Profile: #{profile[:display_name]}",
         color: 0x0099ff,
@@ -178,7 +178,7 @@ class PugBot
         timestamp: Time.now
         )
 
-      embed.add_field(name: "🌍 Region", value: profile[:region], inline: true)
+      embed.add_field(name: "🌍 Region", value: profile[:region], inline: true) #TODO make sure region comes from the database
       embed.add_field(name: "🎮 Total Matches", value: profile[:total_matches], inline: true)
       embed.add_field(name: "🏆 Win Rate", value: profile[:win_rate], inline: true)
       embed.add_field(name: "⚔️ Average Frags", value: profile[:avg_frags] || 'N/A', inline: true)
@@ -199,7 +199,7 @@ class PugBot
         event << "📊 **Analysis:**\n#{response}"
       rescue => e
         @logger.error "AI analysis failed: #{e.inspect}"
-        event << "❌ **AI analysis failed:** #{e.message}" #consider redacting parts of the error
+        event << "❌ **AI analysis failed:** #{e.message}"
       end
     end
 
@@ -220,7 +220,7 @@ class PugBot
     end
   end
 
-  def setup_events
+   def setup_events
     @bot.ready do |event|
       @logger.info "PUG Bot Ready! Logged in as #{@bot.profile.username}##{@bot.profile.discriminator}"
       @logger.info "Bot is running in #{@bot.servers.count} servers"
@@ -235,7 +235,7 @@ class PugBot
           pugbot_channel.send_message("🤖 **PUG Bot is online and ready!**\nType `!join` to start playing!")
         end
       end
-      
+
       # Set bot activity
       @bot.game = "Type !join to play | #{@queue_service.queue_status[:size]}/8 in queue"
     end
@@ -245,13 +245,13 @@ class PugBot
 
       # Create player record
       Player.find_or_create_by_discord(event.user)
-      
+
       # Send welcome message in general channel
       general = event.server.general_channel
       general&.send_message("👋 Welcome #{event.user.mention}! Head to #pugbot and type `!join` to start playing!")
     end
-    
-    # Update bot activity every 30 seconds
+
+    # Update bot activity
     Thread.new do
       loop do
         sleep(30)
@@ -268,7 +268,7 @@ class PugBot
   def start_match(event, force: false)
     begin
       # Get match data from queue
-      match_data = force ? @queue_service.force_create_match : @queue_service.get_ready_match
+      match_data = force ? @queue_service.force_create_match : @queue_service.get_ready_match # consider better naming
 
       return event << "❌ **No match ready to start.**" unless match_data
 
@@ -277,7 +277,7 @@ class PugBot
 
       unless server_result[:success]
         event << "❌ **Failed to start server:** #{server_result[:error]}" #Potentially retry
-        return
+        return #Consider a retry mechanism
       end
       
       # Create match record
@@ -311,7 +311,7 @@ class PugBot
       # Mention all players
       mentions = match_data[:players].map { |p| "<@#{p[:discord_user].id}>" }.join(' ')
       event << "#{mentions} - Your match is starting! Server details will be posted shortly."
-      
+
     rescue => e
       @logger.error "Failed to start match: #{e.inspect}" #Include backtrace for debugging
       event << "❌ **Failed to start match:** #{e.message}"
@@ -326,5 +326,6 @@ end
 # Start the bot
 if __FILE__ == $0
   bot = PugBot.new
+
   bot.run
 end
