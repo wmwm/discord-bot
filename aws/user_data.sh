@@ -32,11 +32,25 @@ mkdir -p /opt/fortressonesv/fortress/maps/
 # Download map from S3
 aws s3 cp s3://${S3_BUCKET}/maps/${MAP_NAME}.bsp /opt/fortressonesv/fortress/maps/${MAP_NAME}.bsp
 
+# --- Demo Recording and S3 Upload ---
+# Configure game server to record demos (this depends on game server config, assumed to be in fo_quadmode.cfg)
+# For example, in server.cfg or fo_quadmode.cfg:
+# set demorec 1
+# set demopath /opt/fortressone/demos
+
+# Create demos directory on host
+mkdir -p /opt/fortressone/demos
+
+# Add a cron job to upload demos to S3
+# This assumes the EC2 instance has an IAM role with write access to the S3 bucket
+(crontab -l 2>/dev/null; echo "*/5 * * * * /usr/bin/aws s3 sync /opt/fortressone/demos/ s3://${S3_BUCKET}/demos/ --delete") | crontab -
+
 # Run FortressOne server in Docker
 docker run -d \
   --name fortressone-server \
   -p 27500:27500/udp \
   -p 27500:27500/tcp \
   -v /opt/fortressonesv/fortress/maps/:/opt/fortressone/fortress/maps/ \
+  -v /opt/fortressone/demos/:/opt/fortressone/demos/ \
   fortressone-server:latest \
   ./mvdsv +set hostname "${HOT_HOSTNAME}" +exec fo_quadmode.cfg +map "${MAP_NAME}"

@@ -7,12 +7,18 @@ class AwsService
     @resource = Aws::EC2::Resource.new(client: @ec2)
   end
   
-  def deploy_server(region = 'Sydney', map_name = 'dm4')
+  def deploy_server(region = 'Sydney', map_name = 'dm4', hostname = 'Pug Fortress')
     # Terminate any existing servers first
     terminate_all_servers
     
     # Read user_data script content
     user_data_script = File.read('aws/user_data.sh')
+
+    # Replace placeholders
+    s3_bucket = ENV['S3_MAP_BUCKET'] || 'your-default-s3-bucket' # Fallback for testing
+    user_data_script.gsub!('__S3_BUCKET_PLACEHOLDER__', s3_bucket)
+    user_data_script.gsub!('__MAP_NAME_PLACEHOLDER__', map_name)
+    user_data_script.gsub!('__HOSTNAME_PLACEHOLDER__', hostname)
     
     instance = @resource.create_instances({
       image_id: 'ami-0d02292614a3b0df1', # Ubuntu 22.04 LTS
@@ -21,7 +27,7 @@ class AwsService
       instance_type: 't2.micro',
       key_name: 'fortress-one-key',
       security_group_ids: ['sg-05ce110e128b8509c'], # Replace with actual security group
-      user_data: Base64.encode64(user_data),
+      user_data: Base64.encode64(user_data_script),
       tag_specifications: [{
         resource_type: 'instance',
         tags: [
