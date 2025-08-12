@@ -144,3 +144,10 @@ Dockerfile.dev
 # Replit specific
 .replit
 replit.nix
+
+# Local deployment clutter
+.bundle/
+vendor/
+*.log
+*.sqlite3
+.DS_Store
