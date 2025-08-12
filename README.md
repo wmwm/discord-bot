@@ -177,3 +177,29 @@ MIT License - see LICENSE file for details.
 For issues and questions:
 - GitHub Issues: Report bugs and feature requests
 - Discord: Join development server for real-time support
+
+## Troubleshooting: Render Build Error
+
+If you see this error on Render:
+
+> You are trying to install in deployment mode after changing your Gemfile. Run `bundle install` elsewhere and add the updated Gemfile.lock to version control.
+
+**How to fix:**
+
+1. **On your local machine:**
+   - Run:
+     ```bash
+     bundle install
+     ```
+   - This will update your `Gemfile.lock` to match your `Gemfile`.
+
+2. **Add and commit the updated lock file:**
+   ```bash
+   git add Gemfile.lock
+   git commit -m "Update Gemfile.lock after Gemfile changes"
+   git push
+   ```
+
+3. **Redeploy on Render.**
+
+This ensures your `Gemfile.lock` is in sync with your `Gemfile`, which is required for deployment in deployment mode.

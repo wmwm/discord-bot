@@ -1,5 +1,6 @@
-[providers]
-ruby = "3.2.2"
+providers = [
+  { name = "ruby", version = "3.2.2" }
+]
 
 [phases.setup]
 nixPkgs = ["ruby_3_2", "sqlite", "libffi"]
