@@ -19,7 +19,7 @@ class AwsService
       max_count: 1,
       instance_type: 't2.micro',
       key_name: 'fortress-one-key',
-      security_group_ids: ['sg-0123456789abcdef0'], # Replace with actual security group
+      security_group_ids: ['sg-05ce110e128b8509c'], # Replace with actual security group
       user_data: Base64.encode64(user_data),
       tag_specifications: [{
         resource_type: 'instance',

@@ -42,7 +42,7 @@ class PugBot
       result = @queue_service.add_player(event.user)
 
       if result[:success]
-        event << "✅ #{result[:message]}"
+        event << "Success: #{result[:message]}"
 
         # Send queue status
         status = @queue_service.queue_status
@@ -64,20 +64,20 @@ class PugBot
           event << "#{mentions} - Ready check active!"
         end
       else
-        event << "❌ #{result[:message]}"
+        event << "Error: #{result[:message]}"
       end
     end
 
     @bot.command(:leave) do |event|
       result = @queue_service.remove_player(event.user)
-      event << result[:success] ? "✅ #{result[:message]}" : "❌ #{result[:message]}"
+      event << result[:success] ? "Success: #{result[:message]}" : "Error: #{result[:message]}"
     end
 
     @bot.command(:ready) do |event|
       result = @queue_service.player_ready(event.user)
 
       if result[:success]
-        event << "✅ #{result[:message]}"
+        event << "Success: #{result[:message]}"
 
         # Check if match should start
         ready_status = @queue_service.ready_status
@@ -89,7 +89,7 @@ class PugBot
           event << "⏳ Waiting for #{remaining} more players to ready up..."
         end
       else
-        event << "❌ #{result[:message]}"
+        event << "Error: #{result[:message]}"
       end
     end
 
@@ -104,7 +104,7 @@ class PugBot
         end.join("\n")
         
         embed = Discordrb::Webhooks::Embed.new(
-          title: "🎯 PUG Queue Status",
+          title: "Status: PUG Queue Status",
           description: "**Current Queue (#{status[:size]}/#{status[:max_size]}):**\n#{queue_list}",
           color: status[:size] >= 8 ? 0x00ff00 : 0xffa500,
           timestamp: Time.now
@@ -125,19 +125,19 @@ class PugBot
 
     # Server management commands  
     @bot.command(:startserver) do |event, map_name = 'dm4'| #TODO: accept region as an argument
-      event << "🚀 **Starting FortressOne server...**"
+      event << "Starting: **Starting FortressOne server...**"
       event << "Map: #{map_name}"
       event << "Region: Sydney (AU)" #This needs to be configurable
 
       result = @aws_service.deploy_server('Sydney', map_name)
 
       if result[:success]
-        event << "✅ **Server deployment initiated!**"
+        event << "Success: **Server deployment initiated!**"
         event << "Instance ID: #{result[:instance_id]}"
         event << "Status: #{result[:status]}"
         event << "⏳ Server will be ready in ~2-3 minutes..." #Consider providing a method to check on status of server
       else
-        event << "❌ **Failed to start server:** #{result[:error]}"
+        event << "Error: **Failed to start server:** #{result[:error]}"
       end
     end
     
@@ -165,7 +165,7 @@ class PugBot
       player = Player.find(discord_id: target_user.id.to_s)
 
       unless player
-        event << "❌ **Player not found.** Play some matches first!"
+        event << "Error: **Player not found.** Play some matches first!"
         return
       end
 
@@ -190,28 +190,28 @@ class PugBot
     # AI-powered commands
     @bot.command(:analyze) do |event, *args|
       query = args.join(' ')
-      return event << "❌ **Please provide a query to analyze.**" if query.empty?
+      return event << "Error: **Please provide a query to analyze.**" if query.empty?
 
-      event << "🤖 **Analyzing:** #{query}"
+      event << "Bot: **Analyzing:** #{query}"
 
       begin
         response = @ai_service.analyze_query(query, event.user)
         event << "📊 **Analysis:**\n#{response}"
       rescue => e
         @logger.error "AI analysis failed: #{e.inspect}"
-        event << "❌ **AI analysis failed:** #{e.message}"
+        event << "Error: **AI analysis failed:** #{e.message}"
       end
     end
 
     # Admin commands
     @bot.command(:reset, required_roles: ['Admin', 'Moderator']) do |event|
       @queue_service.reset_queue
-      event << "✅ **Queue has been reset by admin.**"
+      event << "Success: **Queue has been reset by admin.**"
     end
 
     @bot.command(:forcestart, required_roles: ['Admin', 'Moderator']) do |event|
       if @queue_service.queue_status[:size] < 4
-        event << "❌ **Need at least 4 players to force start a match.**"
+        event << "Error: **Need at least 4 players to force start a match.**"
         return
       end
 
@@ -232,7 +232,7 @@ class PugBot
         pugbot_channel = server.channels.find { |c| c.name == 'pugbot' }
         if pugbot_channel
           @logger.info "Found #pugbot channel in #{server.name}"
-          pugbot_channel.send_message("🤖 **PUG Bot is online and ready!**\nType `!join` to start playing!")
+          pugbot_channel.send_message("Bot: **PUG Bot is online and ready!**\nType `!join` to start playing!")
         end
       end
 
@@ -270,13 +270,13 @@ class PugBot
       # Get match data from queue
       match_data = force ? @queue_service.force_create_match : @queue_service.get_ready_match # consider better naming
 
-      return event << "❌ **No match ready to start.**" unless match_data
+      return event << "Error: **No match ready to start.**" unless match_data
 
       # Start server
       server_result = @aws_service.deploy_server(match_data[:region], 'dm4')
 
       unless server_result[:success]
-        event << "❌ **Failed to start server:** #{server_result[:error]}" #Potentially retry
+        event << "Error: **Failed to start server:** #{server_result[:error]}" #Potentially retry
         return #Consider a retry mechanism
       end
       
@@ -314,7 +314,7 @@ class PugBot
 
     rescue => e
       @logger.error "Failed to start match: #{e.inspect}" #Include backtrace for debugging
-      event << "❌ **Failed to start match:** #{e.message}"
+      event << "Error: **Failed to start match:** #{e.message}"
     end
   end
   
