@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 
+require 'rexml/document'
 require 'discordrb'
 require 'dotenv/load'
 require 'logger'
