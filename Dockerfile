@@ -14,6 +14,9 @@ RUN gem install bundler && bundle install
 RUN bundle clean --force
 RUN bundle install --without development test --force
 
+# Create a writable directory for the database
+RUN mkdir -p /app/data && chown nobody /app/data
+
 # Set user to run the application (non-root user)
 USER nobody
 
