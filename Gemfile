@@ -33,6 +33,7 @@ gem 'tzinfo', '~> 2.0'
 
 # JSON handling
 gem 'json', '~> 2.7'
+gem 'rexml', '~> 3.2'
 
 # Development and testing
 group :development, :test do

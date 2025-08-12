@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 
+require 'rexml/document'
 require 'discordrb'
 require 'dotenv/load'
 require 'logger'
@@ -13,6 +14,9 @@ require_relative 'services/aws_service'
 require_relative 'services/ai_service'
 
 class PugBot
+
+  MAX_QUEUE_SIZE = 8 # Define constant for queue size
+
   def initialize
     @bot = Discordrb::Commands::CommandBot.new(
       token: ENV['DISCORD_PUG_BOT_TOKEN'],
@@ -20,26 +24,26 @@ class PugBot
       prefix: '!',
       advanced_functionality: true
     )
-    
+
     @logger = Logger.new($stdout)
     @logger.level = Logger::INFO
-    
+
     @queue_service = QueueService.instance
     @aws_service = AwsService.new
     @ai_service = AiService.new
-    
+
     setup_commands
     setup_events
   end
-  
+
   def setup_commands
     # Queue management commands
     @bot.command(:join) do |event|
       result = @queue_service.add_player(event.user)
-      
+
       if result[:success]
         event << "✅ #{result[:message]}"
-        
+
         # Send queue status
         status = @queue_service.queue_status
         if status[:size] > 0
@@ -49,11 +53,11 @@ class PugBot
           
           event << "📋 **Current Queue (#{status[:size]}/#{status[:max_size]}):**\n#{queue_list}"
         end
-        
+
         # Check if ready check should start
-        if status[:size] >= 8
+        if status[:size] >= MAX_QUEUE_SIZE
           event << "🚨 **Queue is full! Starting ready check...**"
-          event << "Type `!ready` within 60 seconds to confirm you're ready to play!"
+          event << "Type `!ready` within 60 seconds to confirm you're ready to play!" #Consider a configurable timeout.
           
           # Mention all queued players
           mentions = status[:players].map { |p| "<@#{p[:discord_id]}>" }.join(' ')
@@ -63,21 +67,21 @@ class PugBot
         event << "❌ #{result[:message]}"
       end
     end
-    
+
     @bot.command(:leave) do |event|
       result = @queue_service.remove_player(event.user)
       event << result[:success] ? "✅ #{result[:message]}" : "❌ #{result[:message]}"
     end
-    
+
     @bot.command(:ready) do |event|
       result = @queue_service.player_ready(event.user)
-      
+
       if result[:success]
         event << "✅ #{result[:message]}"
-        
+
         # Check if match should start
         ready_status = @queue_service.ready_status
-        if ready_status && ready_status[:ready_count] >= 8
+        if ready_status && ready_status[:ready_count] >= MAX_QUEUE_SIZE # Use constant
           event << "🎮 **All players ready! Creating match...**"
           start_match(event)
         elsif ready_status
@@ -88,13 +92,13 @@ class PugBot
         event << "❌ #{result[:message]}"
       end
     end
-    
+
     @bot.command(:status) do |event|
       status = @queue_service.queue_status
-      
+
       if status[:size] == 0
         event << "📋 **Queue is empty.** Type `!join` to start a game!"
-      else
+      else #consider adding an "else if" for a case where status[:size] is negative which doesn't make sense
         queue_list = status[:players].map.with_index(1) do |p, i|
           "#{i}. #{p[:display_name]} (#{p[:region]}) - #{p[:time_waiting]}"
         end.join("\n")
@@ -105,7 +109,7 @@ class PugBot
           color: status[:size] >= 8 ? 0x00ff00 : 0xffa500,
           timestamp: Time.now
         )
-        
+
         if status[:ready_check_active]
           ready_status = @queue_service.ready_status
           embed.add_field(
@@ -114,24 +118,24 @@ class PugBot
             inline: false
           )
         end
-        
+
         event.channel.send_embed('', embed)
       end
     end
-    
+
     # Server management commands  
-    @bot.command(:startserver) do |event, map_name = 'dm4'|
+    @bot.command(:startserver) do |event, map_name = 'dm4'| #TODO: accept region as an argument
       event << "🚀 **Starting FortressOne server...**"
       event << "Map: #{map_name}"
-      event << "Region: Sydney (AU)"
-      
+      event << "Region: Sydney (AU)" #This needs to be configurable
+
       result = @aws_service.deploy_server('Sydney', map_name)
-      
+
       if result[:success]
         event << "✅ **Server deployment initiated!**"
         event << "Instance ID: #{result[:instance_id]}"
         event << "Status: #{result[:status]}"
-        event << "⏳ Server will be ready in ~2-3 minutes..."
+        event << "⏳ Server will be ready in ~2-3 minutes..." #Consider providing a method to check on status of server
       else
         event << "❌ **Failed to start server:** #{result[:error]}"
       end
@@ -139,7 +143,7 @@ class PugBot
     
     @bot.command(:servers) do |event|
       servers = @aws_service.list_active_servers
-      
+
       if servers.empty?
         event << "📋 **No active servers.**"
       else
@@ -150,72 +154,73 @@ class PugBot
           "Uptime: #{server[:uptime]}\n" +
           "Players: #{server[:player_count]}"
         end.join("\n\n")
-        
+
         event << "🌐 **Active Servers:**\n#{server_list}"
       end
     end
-    
+
     # Player statistics
     @bot.command(:profile) do |event, mentioned_user = nil|
       target_user = mentioned_user ? event.message.mentions.first : event.user
       player = Player.find(discord_id: target_user.id.to_s)
-      
+
       unless player
         event << "❌ **Player not found.** Play some matches first!"
         return
       end
-      
+
       profile = player.profile_summary
-      
+
       embed = Discordrb::Webhooks::Embed.new(
         title: "👤 Player Profile: #{profile[:display_name]}",
         color: 0x0099ff,
         thumbnail: Discordrb::Webhooks::EmbedThumbnail.new(url: target_user.avatar_url),
         timestamp: Time.now
-      )
-      
-      embed.add_field(name: "🌍 Region", value: profile[:region], inline: true)
+        )
+
+      embed.add_field(name: "🌍 Region", value: profile[:region], inline: true) #TODO make sure region comes from the database
       embed.add_field(name: "🎮 Total Matches", value: profile[:total_matches], inline: true)
       embed.add_field(name: "🏆 Win Rate", value: profile[:win_rate], inline: true)
-      embed.add_field(name: "⚔️ Average Frags", value: profile[:avg_frags], inline: true)
+      embed.add_field(name: "⚔️ Average Frags", value: profile[:avg_frags] || 'N/A', inline: true)
       embed.add_field(name: "👀 Last Seen", value: profile[:last_seen] || 'Never', inline: true)
-      
+
       event.channel.send_embed('', embed)
     end
-    
+
     # AI-powered commands
     @bot.command(:analyze) do |event, *args|
       query = args.join(' ')
       return event << "❌ **Please provide a query to analyze.**" if query.empty?
-      
+
       event << "🤖 **Analyzing:** #{query}"
-      
+
       begin
         response = @ai_service.analyze_query(query, event.user)
         event << "📊 **Analysis:**\n#{response}"
       rescue => e
+        @logger.error "AI analysis failed: #{e.inspect}"
         event << "❌ **AI analysis failed:** #{e.message}"
       end
     end
-    
+
     # Admin commands
     @bot.command(:reset, required_roles: ['Admin', 'Moderator']) do |event|
       @queue_service.reset_queue
       event << "✅ **Queue has been reset by admin.**"
     end
-    
+
     @bot.command(:forcestart, required_roles: ['Admin', 'Moderator']) do |event|
       if @queue_service.queue_status[:size] < 4
         event << "❌ **Need at least 4 players to force start a match.**"
         return
       end
-      
+
       event << "⚡ **Admin force starting match...**"
       start_match(event, force: true)
     end
   end
-  
-  def setup_events
+
+   def setup_events
     @bot.ready do |event|
       @logger.info "PUG Bot Ready! Logged in as #{@bot.profile.username}##{@bot.profile.discriminator}"
       @logger.info "Bot is running in #{@bot.servers.count} servers"
@@ -230,49 +235,49 @@ class PugBot
           pugbot_channel.send_message("🤖 **PUG Bot is online and ready!**\nType `!join` to start playing!")
         end
       end
-      
+
       # Set bot activity
       @bot.game = "Type !join to play | #{@queue_service.queue_status[:size]}/8 in queue"
     end
-    
+
     @bot.member_join do |event|
       @logger.info "New member joined: #{event.user.username}"
-      
+
       # Create player record
       Player.find_or_create_by_discord(event.user)
-      
+
       # Send welcome message in general channel
       general = event.server.general_channel
       general&.send_message("👋 Welcome #{event.user.mention}! Head to #pugbot and type `!join` to start playing!")
     end
-    
-    # Update bot activity every 30 seconds
+
+    # Update bot activity
     Thread.new do
       loop do
         sleep(30)
         begin
           queue_size = @queue_service.queue_status[:size]
           @bot.game = "Type !join to play | #{queue_size}/8 in queue"
-        rescue => e
-          @logger.error "Failed to update bot activity: #{e.message}"
+        rescue StandardError => e
+          @logger.error "Failed to update bot activity: #{e.inspect}"
         end
       end
     end
   end
-  
+
   def start_match(event, force: false)
     begin
       # Get match data from queue
-      match_data = force ? @queue_service.force_create_match : @queue_service.get_ready_match
-      
+      match_data = force ? @queue_service.force_create_match : @queue_service.get_ready_match # consider better naming
+
       return event << "❌ **No match ready to start.**" unless match_data
-      
+
       # Start server
       server_result = @aws_service.deploy_server(match_data[:region], 'dm4')
-      
+
       unless server_result[:success]
-        event << "❌ **Failed to start server:** #{server_result[:error]}"
-        return
+        event << "❌ **Failed to start server:** #{server_result[:error]}" #Potentially retry
+        return #Consider a retry mechanism
       end
       
       # Create match record
@@ -291,7 +296,7 @@ class PugBot
         color: 0x00ff00,
         timestamp: Time.now
       )
-      
+
       red_team = match.red_team.map(&:username).join(', ')
       blue_team = match.blue_team.map(&:username).join(', ')
       
@@ -306,9 +311,9 @@ class PugBot
       # Mention all players
       mentions = match_data[:players].map { |p| "<@#{p[:discord_user].id}>" }.join(' ')
       event << "#{mentions} - Your match is starting! Server details will be posted shortly."
-      
+
     rescue => e
-      @logger.error "Failed to start match: #{e.message}"
+      @logger.error "Failed to start match: #{e.inspect}" #Include backtrace for debugging
       event << "❌ **Failed to start match:** #{e.message}"
     end
   end
@@ -321,5 +326,6 @@ end
 # Start the bot
 if __FILE__ == $0
   bot = PugBot.new
+
   bot.run
 end
