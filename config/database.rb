@@ -1,11 +1,17 @@
 require 'sequel'
 require 'dotenv/load'
 
-# Database connection configuration - SQLite for Railway compatibility
+# Database connection configuration
+# Use DATABASE_URL for managed databases (e.g., PostgreSQL on Railway/Heroku).
 if ENV['DATABASE_URL']
   DB = Sequel.connect(ENV['DATABASE_URL'])
 else
-  DB = Sequel.sqlite('pugbot_development.db')
+  # Fallback to SQLite. For platforms like Railway with ephemeral/read-only
+  # filesystems, we must use a persistent, writable directory. Railway provides
+  # a volume mount path in an environment variable.
+  # For local development, this will default to the project root.
+  db_path = File.join(ENV['RAILWAY_VOLUME_MOUNT_PATH'] || './data', 'pugbot.db')
+  DB = Sequel.sqlite(db_path)
 end
 
 # Database schema
