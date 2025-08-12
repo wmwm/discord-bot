@@ -22,4 +22,21 @@ foreach ($path in $pathsToClean) {
     }
 }
 
+Write-Host "`n🔎 Checking if Gemfile.lock is in sync with Gemfile..."
+$lockCheck = bundle check 2>&1
+if ($lockCheck -like "*install the missing gems*") {
+    Write-Host "⚠️  Gemfile.lock is out of sync. Running bundle install..."
+    bundle install
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "✅ Gemfile.lock updated."
+        git add Gemfile.lock
+        Write-Host "✅ Gemfile.lock staged for commit."
+    } else {
+        Write-Host "❌ bundle install failed."
+        exit 1
+    }
+} else {
+    Write-Host "✅ Gemfile.lock is in sync."
+}
+
 Write-Host "`n🚀 Setup complete."
