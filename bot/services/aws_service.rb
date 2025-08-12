@@ -8,25 +8,20 @@ class AwsService
   end
   
   def deploy_server(region = 'Sydney', map_name = 'dm4', hostname = 'Pug Fortress')
-    # Terminate any existing servers first
-    terminate_all_servers
-    
-    # Read user_data script content
     user_data_script = File.read('aws/user_data.sh')
 
-    # Replace placeholders
-    s3_bucket = ENV['S3_MAP_BUCKET'] || 'your-default-s3-bucket' # Fallback for testing
+    s3_bucket = ENV['S3_MAP_BUCKET'] || 'your-default-s3-bucket'
     user_data_script.gsub!('__S3_BUCKET_PLACEHOLDER__', s3_bucket)
     user_data_script.gsub!('__MAP_NAME_PLACEHOLDER__', map_name)
     user_data_script.gsub!('__HOSTNAME_PLACEHOLDER__', hostname)
     
     instance = @resource.create_instances({
-      image_id: 'ami-0d02292614a3b0df1', # Ubuntu 22.04 LTS
+      image_id: ENV['AWS_AMI_ID'],
       min_count: 1,
       max_count: 1,
-      instance_type: 't2.micro',
-      key_name: 'fortress-one-key',
-      security_group_ids: ['sg-05ce110e128b8509c'], # Replace with actual security group
+      instance_type: 't2.micro', # Consider making this configurable via ENV
+      key_name: ENV['AWS_KEY_PAIR_NAME'],
+      security_group_ids: [ENV['AWS_SECURITY_GROUP_ID']],
       user_data: Base64.encode64(user_data_script),
       tag_specifications: [{
         resource_type: 'instance',
@@ -46,10 +41,14 @@ class AwsService
       launched_at: Time.now
     )
     
-    # Wait for instance to get public IP
-    Thread.new do
-      wait_for_server_ready(instance, server)
-    end
+    # Wait for instance to be running and get public IP
+    instance.wait_until_running
+    instance.load # Reload instance data to get public IP
+
+    server.update(
+      status: instance.state.name,
+      public_ip: instance.public_ip_address
+    )
     
     {
       success: true,
@@ -57,7 +56,8 @@ class AwsService
       server_id: server.id,
       region: region,
       map: map_name,
-      status: 'launching'
+      status: instance.state.name,
+      public_ip: instance.public_ip_address # Return public IP
     }
   rescue => e
     {
@@ -66,8 +66,8 @@ class AwsService
     }
   end
   
-  def get_server_status(server_id)
-    server = Server[server_id]
+  def get_server_status(aws_instance_id)
+    server = Server.find(aws_instance_id: aws_instance_id)
     return { success: false, error: 'Server not found' } unless server
     
     begin
@@ -82,7 +82,7 @@ class AwsService
       
       {
         success: true,
-        server_id: server_id,
+        server_id: server.id,
         aws_instance_id: server.aws_instance_id,
         status: instance.state.name,
         public_ip: instance.public_ip_address,
@@ -95,8 +95,8 @@ class AwsService
     end
   end
   
-  def terminate_server(server_id)
-    server = Server[server_id]
+  def terminate_server(aws_instance_id) # Changed argument name
+    server = Server.find(aws_instance_id: aws_instance_id) # Find by aws_instance_id
     return { success: false, error: 'Server not found' } unless server
     
     begin
@@ -141,9 +141,8 @@ class AwsService
     servers = Server.where(status: ['launching', 'running']).all
     
     servers.map do |server|
-      status_info = get_server_status(server.id)
+      status_info = get_server_status(server.aws_instance_id) # Pass aws_instance_id
       status_info[:success] ? status_info : nil
     end.compact
   end
-  
-  end
+end

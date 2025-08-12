@@ -33,6 +33,7 @@ class PugBot
     @ai_service = AiService.new
 
     @map_votes = Hash.new(0) # Initialize map votes
+    @active_server_instance = nil # Initialize active server instance
 
     setup_commands
     setup_events
@@ -131,7 +132,12 @@ class PugBot
     end
 
     # Server management commands  
-    @bot.command(:startserver) do |event, map_name = 'dm4'| #TODO: accept region as an argument
+    @bot.command(:startserver) do |event, map_name = 'dm4'|
+      if @active_server_instance
+        event << "A server is already active and attached to the bot: IP #{@active_server_instance[:public_ip]}"
+        return
+      end
+
       event << "Starting: **Starting FortressOne server...**"
       event << "Map: #{map_name}"
       event << "Region: Sydney (AU)" #This needs to be configurable
@@ -139,10 +145,15 @@ class PugBot
       result = @aws_service.deploy_server('Sydney', map_name)
 
       if result[:success]
+        @active_server_instance = {
+          instance_id: result[:instance_id],
+          public_ip: result[:public_ip],
+          status: result[:status]
+        }
         event << "Success: **Server deployment initiated!**"
         event << "Instance ID: #{result[:instance_id]}"
         event << "Status: #{result[:status]}"
-        event << "⏳ Server will be ready in ~2-3 minutes..." #Consider providing a method to check on status of server
+        event << "⏳ Server will be ready in ~2-3 minutes... Once ready, it will be attached to the bot."
       else
         event << "Error: **Failed to start server:** #{result[:error]}"
       end
@@ -167,11 +178,21 @@ class PugBot
     end
 
     @bot.command(:serverstatus) do |event|
+      if @active_server_instance
+        event << "Attached Server Status:"
+        event << "Instance ID: #{@active_server_instance[:instance_id]}"
+        event << "Public IP: #{@active_server_instance[:public_ip]}"
+        event << "Status: #{@active_server_instance[:status]}"
+        # Optionally, fetch real-time status from AWS for the attached server
+        # current_status = @aws_service.get_server_status(@active_server_instance[:instance_id])
+        # event << "Current AWS Status: #{current_status}"
+      end
+
       servers = @aws_service.list_active_servers
 
-      if servers.empty?
+      if servers.empty? && !@active_server_instance
         event << "📋 **No active servers.**"
-      else
+      elsif !servers.empty?
         server_list = servers.map do |server|
           "🖥️ **#{server[:region]} Server**\n" +
           "Instance ID: #{server[:aws_instance_id]}\n" +
@@ -181,22 +202,38 @@ class PugBot
           "Players: #{server[:player_count]}"
         end.join("\n\n")
 
-        event << "🌐 **FortressOne Server Status:**\n#{server_list}"
+        event << "🌐 **FortressOne Server Status (All Active):**\n#{server_list}"
       end
     end
 
-    @bot.command(:stopserver) do |event, server_id|
-      unless server_id
-        event << "Error: Please provide the server ID to stop. You can get this from !serverstatus."
+    @bot.command(:stopserver) do |event, server_id_or_attached_flag = nil|
+      target_server_id = nil
+
+      if server_id_or_attached_flag == 'attached' && @active_server_instance
+        target_server_id = @active_server_instance[:instance_id]
+        event << "Attempting to stop the attached server: #{target_server_id}"
+      elsif server_id_or_attached_flag
+        target_server_id = server_id_or_attached_flag
+        event << "Attempting to stop server with ID: #{target_server_id}"
+      elsif @active_server_instance
+        target_server_id = @active_server_instance[:instance_id]
+        event << "No server ID provided, stopping the attached server: #{target_server_id}"
+      else
+        event << "Error: Please provide the server ID to stop, or type `!stopserver attached` to stop the currently attached server."
         return
       end
 
-      result = @aws_service.terminate_server(server_id.to_i)
+      result = @aws_service.terminate_server(target_server_id)
 
       if result[:success]
-        event << "Success: #{result[:message]}"
+        if @active_server_instance && @active_server_instance[:instance_id] == target_server_id
+          @active_server_instance = nil # Detach the server
+          event << "Success: Attached server #{target_server_id} has been stopped and detached."
+        else
+          event << "Success: Server #{target_server_id} has been stopped."
+        end
       else
-        event << "Error: Failed to stop server: #{result[:error]}"
+        event << "Error: Failed to stop server #{target_server_id}: #{result[:error]}"
       end
     end
 
@@ -252,6 +289,47 @@ class PugBot
       rescue => e
         @logger.error "AI analysis failed: #{e.inspect}"
         event << "Error: **AI analysis failed:** #{e.message}"
+      end
+    end
+
+    # Help command
+    @bot.command(:help) do |event|
+      embed = Discordrb::Webhooks::Embed.new(
+        title: "PugBot Commands",
+        description: "Here is a list of available commands:",
+        color: 0x0099ff
+      )
+
+      embed.add_field(name: "!join", value: "Join the queue to play a PUG.", inline: false)
+      embed.add_field(name: "!leave", value: "Leave the queue.", inline: false)
+      embed.add_field(name: "!status", value: "Check the current queue status.", inline: false)
+      embed.add_field(name: "!ready", value: "Mark yourself as ready to play.", inline: false)
+      embed.add_field(name: "!unready", value: "Mark yourself as not ready.", inline: false)
+      embed.add_field(name: "!profile", value: "View your player profile.", inline: false)
+      embed.add_field(name: "!setlocation [country_code]", value: "Set your location (e.g., !setlocation US).", inline: false)
+      embed.add_field(name: "!startserver [map_name]", value: "Start a new FortressOne server (e.g., !startserver dm4).", inline: false)
+      embed.add_field(name: "!servers", value: "List all active servers.", inline: false)
+      embed.add_field(name: "!serverstatus", value: "Get the status of all active servers.", inline: false)
+      embed.add_field(name: "!stopserver [server_id]", value: "Stop a server.", inline: false)
+      embed.add_field(name: "!analyze [query]", value: "Analyze a query using AI.", inline: false)
+      embed.add_field(name: "!ask [question]", value: "Ask the bot a question.", inline: false)
+
+      event.channel.send_embed(' ', embed)
+    end
+
+    # AI-powered command with cooldown
+    @bot.command(:ask, bucket: :ask, rate_limit_message: 'You are on cooldown for %time% seconds.', rate_limit: 60) do |event, *args|
+      query = args.join(' ')
+      return event << "Error: **Please provide a question to ask.**" if query.empty?
+
+      event << "Bot: **Thinking about:** #{query}"
+
+      begin
+        response = @ai_service.analyze_query(query, event.user)
+        event << "🤖 **Answer:**\n#{response}"
+      rescue => e
+        @logger.error "AI query failed: #{e.inspect}"
+        event << "Error: **AI query failed:** #{e.message}"
       end
     end
 
